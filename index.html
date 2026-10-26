@@ -1,0 +1,51 @@
+<!doctype html><html lang="vi"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VLTK Control v2</title>
+<style>:root{color-scheme:dark}body{background:#0e1726;color:#f4f7ff;font:16px system-ui;margin:0;padding:18px}.wrap{max-width:680px;margin:auto}section{background:#1b2a40;padding:17px;border-radius:15px;margin:14px 0;border:1px solid #33465e}input:not([type=checkbox]),select{width:100%;box-sizing:border-box;padding:11px;border-radius:9px;background:#0d1826;color:#fff;border:1px solid #60738c}label{display:flex;justify-content:space-between;gap:10px;align-items:center;margin:13px 0}input[type=checkbox]{width:22px;height:22px}button{background:#3485f5;color:white;border:0;border-radius:9px;padding:12px;margin:4px 5px 4px 0;cursor:pointer;font-weight:700}.danger{background:#a83e4d}small{color:#b7c6d7}#status{white-space:pre-wrap;color:#f2d287}.tab{display:block;width:100%;text-align:left;background:#283d59}.selected{outline:2px solid #67b1ff}</style>
+<div class="wrap"><h1>🎮 VLTK Control Center</h1><small>Quản lý từng ACC hoặc tất cả ACC từ điện thoại.</small>
+<section><h3>Kết nối quản trị</h3><label>Worker URL</label><input id="url" placeholder="https://...workers.dev"><label>Admin Token</label><input id="token" type="password" autocomplete="off"><button id="refresh">Làm mới danh sách</button><p id="status">Chưa kết nối.</p></section>
+<section><h3>Chọn ACC</h3><div id="tabs"></div></section>
+<section><h3>Điều khiển: <span id="target">Tất cả ACC</span></h3><label>Tên ACC (chỉ khi chọn một ACC)</label><input id="name" placeholder="Tên tùy chọn">
+<h4>Ẩn tính năng trên bảng Auto trong game</h4><div id="hidden"></div>
+<h4>Bật / tắt chức năng</h4><div id="enabled"></div>
+<label>Speed <select id="speedMode"><option>Auto</option><option>x1</option><option>x2</option><option>x3</option><option>x5</option><option>x10</option></select></label>
+<button id="save">Gửi cấu hình</button></section>
+<small>Không lưu Admin Token vào trình duyệt. Trạng thái “đã gửi” chỉ xác nhận máy chủ nhận lệnh; “đã áp dụng” được phản hồi bởi tab game.</small></div>
+<script>
+const F=['dautau','boss','tower','rebirth','speed','stop'],N={dautau:'Dã Tẩu',boss:'Boss TG',tower:'Auto Tháp',rebirth:'Chuyển sinh',speed:'Speed',stop:'STOP'};
+let tabs=[],selected='all';
+const el=id=>document.getElementById(id),msg=s=>el('status').textContent=s;
+el('url').value=localStorage.getItem('vltk_v2_worker')||'';
+for(const type of ['hidden','enabled'])for(const k of F){
+ const row=document.createElement('label');row.append(document.createTextNode((type==='hidden'?'Ẩn ':'Bật ')+N[k]));
+ const box=document.createElement('input');box.type='checkbox';box.id=type+'_'+k;row.append(box);el(type).append(row);
+}
+async function api(path,method='GET',data){
+ const base=el('url').value.trim().replace(/\/+$/,'');
+ if(!/^https:\/\/[a-z0-9.-]+$/i.test(base))throw Error('Worker URL HTTPS không hợp lệ');
+ localStorage.setItem('vltk_v2_worker',base);
+ const r=await fetch(base+path,{method,headers:{authorization:'Bearer '+el('token').value.trim(),'content-type':'application/json'},body:data?JSON.stringify(data):undefined,cache:'no-store'});
+ const j=await r.json();if(!r.ok)throw Error(j.error||'HTTP '+r.status);return j;
+}
+function show(){
+ el('tabs').replaceChildren();
+ const opts=[{id:'all',name:'🌐 TẤT CẢ ACC',online:true},...tabs];
+ for(const t of opts){
+  const b=document.createElement('button');b.className='tab'+(selected===t.id?' selected':'');
+  b.textContent=t.name+(t.id==='all'?'':` — ${t.character_name||'Chưa có tên nhân vật'} — ${t.online?'🟢 Online':'⚪ Offline'} (${t.applied_revision}/${t.desired_revision})`);
+  b.onclick=()=>{selected=t.id;show()};el('tabs').append(b);
+ }
+ el('target').textContent=selected==='all'?'Tất cả ACC':(tabs.find(x=>x.id===selected)?.name||selected);
+ const tab=tabs.find(x=>x.id===selected),c=tab?.config||{};
+ el('name').disabled=selected==='all';el('name').value=tab?.name||'';
+ for(const k of F){el('hidden_'+k).checked=!!c.hidden?.includes(k);el('enabled_'+k).checked=!!c.enabled?.[k]}
+ el('speedMode').value=c.speedMode||'Auto';
+}
+el('refresh').onclick=async()=>{try{tabs=(await api('/api/tabs')).tabs;show();msg('Đã cập nhật danh sách '+tabs.length+' ACC.')}catch(e){msg('Lỗi: '+e.message)}};
+el('save').onclick=async()=>{
+ const config={hidden:F.filter(k=>el('hidden_'+k).checked),enabled:{},speedMode:el('speedMode').value};
+ for(const k of F)config.enabled[k]=el('enabled_'+k).checked;
+ if(!confirm(selected==='all'?'Gửi cấu hình này đến TẤT CẢ ACC?':'Gửi cấu hình đến '+el('target').textContent+'?'))return;
+ try{await api(selected==='all'?'/api/all':'/api/tabs/'+selected,'PUT',selected==='all'?{config}:{config,name:el('name').value.trim()});msg('Máy chủ đã lưu lệnh. Đợi tab game phản hồi, sau đó bấm Làm mới danh sách.');}
+ catch(e){msg('Lỗi: '+e.message)}
+};
+show();
+</script></html>
